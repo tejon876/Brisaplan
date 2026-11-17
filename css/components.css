@@ -56,7 +56,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   text-decoration: none;
   transition: all 0.25s ease;
 }
@@ -68,6 +68,19 @@
 
 .btn-primary:hover {
   background: var(--sky-hover);
+}
+
+.btn-google {
+  background: var(--bg-surface);
+  color: var(--text-main);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  padding: 11px 16px;
+}
+
+.btn-google:hover {
+  border-color: var(--sky-primary);
+  background: var(--sky-ice);
 }
 
 .btn-soft {
@@ -239,13 +252,6 @@
   border-radius: var(--radius-pill);
   font-size: 0.78rem;
   font-weight: 700;
-}
-
-.prio-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  display: inline-block;
 }
 
 /* Pomodoro */

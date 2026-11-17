@@ -5,6 +5,7 @@ import {
   saveState,
   loadSession,
   saveSession,
+  loadSavedGoogleAccounts,
   clearAllLocalData,
   exportUserJSON
 } from './storage.js';
@@ -41,7 +42,7 @@ let pomoSeconds = CONFIG.defaultPomodoroSec;
 let pomoTimer = null;
 let tutorialIndex = 0;
 let pendingLoginEmail = '';
-let generatedCode = '';
+let activeVerificationCode = '';
 
 const $ = (s) => document.querySelector(s);
 
@@ -50,7 +51,7 @@ function toast(msg) {
   if (!el) return;
   el.textContent = msg;
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2600);
+  setTimeout(() => el.classList.remove('show'), 2800);
 }
 
 function esc(str) {
@@ -85,6 +86,59 @@ async function verifyEmailDomainExists(email) {
   } catch {
     return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
   }
+}
+
+/* Acceso rápido con Google */
+function renderGoogleSelectorAccounts() {
+  const container = $('#google-accounts-list');
+  if (!container) return;
+  const saved = loadSavedGoogleAccounts();
+  container.innerHTML = saved.length
+    ? saved
+        .map(
+          (acc) => `
+          <button type="button" class="item-row" data-pick-google="${esc(acc.email)}" style="width:100%;cursor:pointer;text-align:left;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="brand-badge" style="width:32px;height:32px;font-size:0.85rem;">${esc(acc.name[0]?.toUpperCase() || 'G')}</span>
+              <div>
+                <div class="item-title">${esc(acc.name)}</div>
+                <div class="item-sub">${esc(acc.email)}</div>
+              </div>
+            </div>
+            <span class="btn btn-soft btn-xs">Entrar</span>
+          </button>`
+        )
+        .join('')
+    : '';
+}
+
+function completeLogin(email, provider = 'Google') {
+  const clean = email.trim().toLowerCase();
+  session = {
+    email: clean,
+    name: clean.split('@')[0],
+    provider,
+    loggedAt: new Date().toISOString()
+  };
+  saveSession(session);
+  connectMailAccount(state, clean, provider);
+  $('#google-picker-modal')?.classList.remove('open');
+  updateAuthView();
+  toast('Sesión iniciada correctamente');
+}
+
+/* Entrega inmediata del código mediante notificación del sistema + bandeja local */
+async function dispatchVerificationCode(email) {
+  activeVerificationCode = String(Math.floor(100000 + Math.random() * 900000));
+  if ('Notification' in window && Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('BrisaPlan — Código de verificación', {
+      body: `Tu código para ${email} es: ${activeVerificationCode}`
+    });
+  }
+  return activeVerificationCode;
 }
 
 /* Login Gate */
@@ -130,7 +184,6 @@ function renderStats() {
 }
 
 function renderHoy() {
-  // Hábitos en Hoy
   const hoyHabits = $('#hoy-habits-list');
   hoyHabits.innerHTML = state.habits.length
     ? state.habits
@@ -151,7 +204,6 @@ function renderHoy() {
         .join('')
     : '<div class="empty-state">Aún no tienes hábitos. Agrega el primero en Tareas y Hábitos.</div>';
 
-  // Pendientes rápidos en Hoy
   const pending = state.tasks.filter((t) => !t.done);
   $('#hoy-tasks-list').innerHTML = pending.length
     ? pending
@@ -169,7 +221,6 @@ function renderHoy() {
         .join('')
     : '<div class="empty-state">Sin pendientes activos. Usa "+ Tarea rápida" para añadir uno.</div>';
 
-  // Siguiente bloque hoy
   const todayBlocks = state.agenda.filter((a) => a.date === todayISO());
   $('#hoy-agenda-list').innerHTML = todayBlocks.length
     ? todayBlocks
@@ -217,7 +268,6 @@ function renderAgenda() {
 }
 
 function renderTasksAndHabits() {
-  // Tareas
   const tList = $('#tasks-full-list');
   tList.innerHTML = state.tasks.length
     ? state.tasks
@@ -241,7 +291,6 @@ function renderTasksAndHabits() {
         .join('')
     : '<div class="empty-state">Sin tareas registradas. Crea una arriba y asígnale un color.</div>';
 
-  // Hábitos
   const hList = $('#habits-full-list');
   hList.innerHTML = state.habits.length
     ? state.habits
@@ -359,14 +408,38 @@ function switchTab(tabName) {
 }
 
 function setupEvents() {
-  // Tema claro/oscuro
   document.querySelectorAll('[data-toggle-theme]').forEach((btn) => {
     btn.addEventListener('click', () => {
       applyTheme(!document.body.classList.contains('dark-mode'));
     });
   });
 
-  // Paso 1 Login: verificar existencia del dominio y enviar código sin mostrarlo en pantalla
+  // Botón Iniciar con Google (1 toque)
+  $('#btn-google-signin').addEventListener('click', () => {
+    renderGoogleSelectorAccounts();
+    $('#google-picker-modal').classList.add('open');
+  });
+
+  $('#close-google-picker').addEventListener('click', () => {
+    $('#google-picker-modal').classList.remove('open');
+  });
+
+  $('#google-quick-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#google-quick-email').value.trim().toLowerCase();
+    if (!email.endsWith('@gmail.com') && !email.includes('@')) {
+      toast('Ingresa una cuenta de Google válida.');
+      return;
+    }
+    const ok = await verifyEmailDomainExists(email);
+    if (!ok) {
+      toast('La cuenta de correo no parece válida.');
+      return;
+    }
+    completeLogin(email, 'Google');
+  });
+
+  // Paso 1 Login con correo alterno: verificar dominio y enviar código via notificación
   $('#login-email-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = $('#login-email-input').value.trim().toLowerCase();
@@ -381,29 +454,23 @@ function setupEvents() {
         return;
       }
       pendingLoginEmail = email;
-      generatedCode = String(Math.floor(100000 + Math.random() * 900000));
+      await dispatchVerificationCode(email);
       $('#login-step-email').style.display = 'none';
       $('#login-step-code').style.display = 'block';
       $('#verify-target-email').textContent = email;
-
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('BrisaPlan — Código de verificación', {
-          body: `Tu código de acceso enviado a ${email} es: ${generatedCode}`
-        });
-      }
-      toast('Código enviado. Revisa la bandeja de entrada de tu correo.');
+      toast('Código enviado. Revisa la notificación o activa permisos de notificación.');
     } catch (err) {
       toast(err.message || 'No se pudo verificar el correo.');
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Continuar';
+      btn.textContent = 'Continuar con correo';
     }
   });
 
-  $('#btn-resend-code').addEventListener('click', () => {
+  $('#btn-resend-code').addEventListener('click', async () => {
     if (!pendingLoginEmail) return;
-    generatedCode = String(Math.floor(100000 + Math.random() * 900000));
-    toast(`Nuevo código enviado a ${pendingLoginEmail}`);
+    await dispatchVerificationCode(pendingLoginEmail);
+    toast(`Código reenviado a ${pendingLoginEmail}`);
   });
 
   $('#btn-back-email').addEventListener('click', () => {
@@ -414,14 +481,11 @@ function setupEvents() {
   $('#login-code-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const code = $('#login-code-input').value.trim();
-    if (!/^\d{6}$/.test(code)) {
-      toast('Ingresa el código de 6 dígitos enviado a tu correo.');
+    if (code !== activeVerificationCode) {
+      toast('El código no coincide. Revisa la notificación o pulsa Reenviar.');
       return;
     }
-    session = { email: pendingLoginEmail, loggedAt: new Date().toISOString() };
-    saveSession(session);
-    connectMailAccount(state, pendingLoginEmail, 'Principal');
-    updateAuthView();
+    completeLogin(pendingLoginEmail, 'Correo');
   });
 
   // Navegación
@@ -429,7 +493,7 @@ function setupEvents() {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
-  // Modal Tarea Rápida (desde Hoy, Agenda o botón flotante)
+  // Modal Tarea Rápida
   document.querySelectorAll('[data-open-quick-task]').forEach((btn) => {
     btn.addEventListener('click', () => {
       $('#quick-task-modal').classList.add('open');
@@ -492,7 +556,7 @@ function setupEvents() {
     toast('Hábito creado');
   });
 
-  // Vincular correo con permiso
+  // Vincular correo con permiso en Correos
   $('#btn-connect-google-mail').addEventListener('click', async () => {
     const email = prompt('Escribe el correo de Google que deseas vincular:');
     if (!email) return;
@@ -532,8 +596,14 @@ function setupEvents() {
     toast(removed ? `Se eliminaron ${removed} correos spam` : 'No hay spam por limpiar');
   });
 
-  // Delegación global de clics y colores
+  // Delegación global
   document.body.addEventListener('click', (e) => {
+    const pickGoogle = e.target.closest('[data-pick-google]');
+    if (pickGoogle) {
+      completeLogin(pickGoogle.dataset.pickGoogle, 'Google');
+      return;
+    }
+
     const swatch = e.target.closest('[data-pick-color]');
     if (swatch) {
       selectedTaskColor = swatch.dataset.pickColor;
@@ -622,7 +692,7 @@ function setupEvents() {
     updatePomodoroText();
   });
 
-  // Mi Espacio: respaldo, notificaciones, widgets, tutorial y ARCO
+  // Mi Espacio
   $('#backup-days-input').addEventListener('change', (e) => {
     const val = Math.max(7, Number(e.target.value) || 7);
     e.target.value = val;

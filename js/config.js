@@ -1,8 +1,9 @@
 export const CONFIG = {
   appName: 'BrisaPlan',
-  version: '2.0.0',
+  version: '2.1.0',
   storageKey: 'brisaplan_clean_state_v2',
   sessionKey: 'brisaplan_user_session_v2',
+  savedAccountsKey: 'brisaplan_saved_google_accounts_v2',
   themeKey: 'brisaplan_theme_v2',
   paypalUrl: 'https://paypal.me/jmatat8',
   defaultPomodoroSec: 25 * 60,

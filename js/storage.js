@@ -51,6 +51,22 @@ export function loadSession() {
 
 export function saveSession(session) {
   localStorage.setItem(CONFIG.sessionKey, JSON.stringify(session));
+  if (session?.email) {
+    const list = loadSavedGoogleAccounts();
+    if (!list.some((a) => a.email === session.email)) {
+      list.unshift({ email: session.email, name: session.name || session.email.split('@')[0] });
+      localStorage.setItem(CONFIG.savedAccountsKey, JSON.stringify(list));
+    }
+  }
+}
+
+export function loadSavedGoogleAccounts() {
+  try {
+    const raw = localStorage.getItem(CONFIG.savedAccountsKey);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
 }
 
 export function clearAllLocalData() {

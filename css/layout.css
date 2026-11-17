@@ -45,6 +45,22 @@ body.dark-mode .login-gate {
   transition: var(--theme-transition);
 }
 
+.divider-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin: 14px 0;
+}
+
+.divider-text::before, .divider-text::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
 /* Header */
 .topbar {
   display: flex;
